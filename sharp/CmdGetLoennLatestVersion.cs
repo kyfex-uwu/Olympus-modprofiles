@@ -12,7 +12,7 @@ namespace Olympus {
 
         public override Tuple<string, string> Run() {
             try {
-                HttpWebRequest req = (HttpWebRequest) WebRequest.Create("https://api.github.com/repos/CelestialCartographers/Loenn/releases/latest");
+                HttpWebRequest req = (HttpWebRequest) WebRequest.Create("https://maddie480.ovh/celeste/loenn-versions");
                 req.UserAgent = "Olympus";
                 req.Timeout = 10000;
                 req.ReadWriteTimeout = 10000;
@@ -23,7 +23,7 @@ namespace Olympus {
                     return new Tuple<string, string>((string) latestVersion["tag_name"], GetDownloadLink((JArray) latestVersion["assets"]));
                 }
             } catch (Exception ex) {
-                Console.Error.WriteLine("Error while checking Loenn version: " + ex.ToString());
+                Console.Error.WriteLine("Error while checking Loenn version: " + ex);
                 return new Tuple<string, string>("unknown", "");
             }
         }

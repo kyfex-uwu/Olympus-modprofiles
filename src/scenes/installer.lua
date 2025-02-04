@@ -293,7 +293,6 @@ function scene.update(status, progress, shape, replace)
     end
 
     if progress ~= nil then
-        native.setProgress(shape == "error" and "error" or not progress and "indeterminate" or "normal", progress or 0)
         scene.progressNext = progress
     end
 
@@ -400,7 +399,7 @@ function scene.sharpTask(id, ...)
 You can ask for help in the Celeste Discord server.
 An invite can be found on the Everest website.
 
-Please drag and drop your files into the #modding_help channel.
+Please drag and drop your log files into the #modding_help channel.
 Before uploading, check your logs for sensitive info (f.e. your username).]],
                             buttons = {
                                 { "Open log folder", function(container)
@@ -458,7 +457,6 @@ end
 
 function scene.leave()
     scener.unlock()
-    native.setProgress("none", 0)
     if scene.onLeave then
         scene.onLeave()
     end

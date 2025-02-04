@@ -1,24 +1,9 @@
-﻿using Mono.Cecil;
-using Mono.Cecil.Cil;
-using MonoMod.Utils;
-using System;
-using System.Collections;
-using System.Collections.Generic;
+﻿using System;
 using System.Diagnostics;
-using System.Drawing;
-using System.Globalization;
 using System.IO;
-using System.IO.Compression;
-using System.Linq;
-using System.Net;
-using System.Reflection;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace Olympus {
-    public unsafe class CmdLaunch : Cmd<string, string, bool, string> {
+    public class CmdLaunch : Cmd<string, string, bool, string> {
 
         public override bool Taskable => true;
 
@@ -29,6 +14,9 @@ namespace Olympus {
             Environment.SetEnvironmentVariable("LOCAL_LUA_DEBUGGER_VSCODE", "0");
 
             Process game = new Process();
+#if WIN32
+            game.StartInfo.UseShellExecute = true;
+#endif
 
             // Unix-likes use a MonoKickstart wrapper script / launch binary.
             if (Environment.OSVersion.Platform == PlatformID.Unix ||
@@ -62,21 +50,38 @@ namespace Olympus {
                 }
             }
 
+            // Steam flatpak detection
+            // Default game path: /home/USER/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/common/Celeste
+            if (Environment.OSVersion.Platform == PlatformID.Unix && game.StartInfo.FileName.Contains("com.valvesoftware.Steam")) {
+                game.StartInfo.FileName = "xdg-open";
+                args = "steam://run/504230";
+                // args won't work but launch vanilla will work because it uses nextLaunchIsVanilla.txt
+            }
+
             if (!string.IsNullOrEmpty(args))
                 game.StartInfo.Arguments = args;
 
+            game.HandleLaunchWrapper("CELESTE");
+
             // Flatpak detection
             // or string.Equals(Environment.GetEnvironmentVariable("container"), "flatpak");
-            if (File.Exists("/.flatpak-info")) {
+            bool isFlatpak = File.Exists("./flatpak-info");
+            if (isFlatpak) {
                 if (!string.IsNullOrEmpty(args))
                     game.StartInfo.Arguments = string.Join(" ", "\"" + game.StartInfo.FileName + "\"", args);
                 else
                     game.StartInfo.Arguments = game.StartInfo.FileName;
                 game.StartInfo.FileName = Path.Combine(Program.RootDirectory, "flatpak-wrapper");
-                game.StartInfo.UseShellExecute = true;
             }
 
             Console.Error.WriteLine($"Starting Celeste process: {game.StartInfo.FileName} {(string.IsNullOrEmpty(args) ? "(without args)" : args)}");
+
+#if !WIN32
+            if (!isFlatpak) {
+                game.StartInfo.Arguments = $"\"{game.StartInfo.FileName}\" {game.StartInfo.Arguments}";
+                game.StartInfo.FileName = ProcessHelper.CreateNoOutputWrapper(game.StartInfo.Arguments);
+            }
+#endif
 
             game.Start();
             return null;

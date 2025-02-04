@@ -5,13 +5,9 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Security.Cryptography;
-using YYProject.XXHash;
 
 namespace Olympus {
     public class CmdModList : Cmd<string, bool, bool, bool, bool, IEnumerator> {
-
-        public static HashAlgorithm Hasher = XXHash64.Create();
-
         public override IEnumerator Run(string root, bool readYamls, bool computeHashes, bool onlyUpdatable, bool excludeDisabled) {
             root = Path.Combine(root, "Mods");
             if (!Directory.Exists(root))
@@ -31,10 +27,14 @@ namespace Olympus {
             else
                 updaterBlacklist = new List<string>();
 
+            Dictionary<string, string> modIDsToNamesMap = null;
+            if (readYamls) modIDsToNamesMap = CmdGetModIdToNameMap.GetModIDsToNamesMap();
+
             if (!onlyUpdatable) {
                 // === mod directories
 
                 string[] files = Directory.GetDirectories(root);
+                Array.Sort(files, (a, b) => string.Compare(a, b, StringComparison.OrdinalIgnoreCase));
                 for (int i = 0; i < files.Length; i++) {
                     string file = files[i];
                     string name = Path.GetFileName(file);
@@ -57,7 +57,7 @@ namespace Olympus {
                             if (File.Exists(yamlPath)) {
                                 using (FileStream stream = File.Open(yamlPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
                                 using (StreamReader reader = new StreamReader(stream))
-                                    info.Parse(reader);
+                                    info.Parse(reader, modIDsToNamesMap);
                             }
                         } catch (UnauthorizedAccessException) { }
                     }
@@ -69,6 +69,7 @@ namespace Olympus {
             {
                 // === mod zips
                 string[] files = Directory.GetFiles(root);
+                Array.Sort(files, (a, b) => string.Compare(a, b, ignoreCase: true));
                 for (int i = 0; i < files.Length; i++) {
                     string file = files[i];
                     string name = Path.GetFileName(file);
@@ -92,12 +93,13 @@ namespace Olympus {
                             using (ZipArchive zip = new ZipArchive(zipStream, ZipArchiveMode.Read))
                             using (Stream stream = (zip.GetEntry("everest.yaml") ?? zip.GetEntry("everest.yml"))?.Open())
                             using (StreamReader reader = stream == null ? null : new StreamReader(stream))
-                                info.Parse(reader);
+                                info.Parse(reader, modIDsToNamesMap);
                         }
 
                         if (computeHashes && info.Name != null) {
+                            using (HashAlgorithm hasher = XXHash64.Create())
                             using (FileStream stream = File.Open(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
-                                info.Hash = BitConverter.ToString(Hasher.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
+                                info.Hash = BitConverter.ToString(hasher.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
                         }
                     }
 
@@ -108,6 +110,7 @@ namespace Olympus {
             if (!onlyUpdatable) {
                 // === bin files
                 string[] files = Directory.GetFiles(root);
+                Array.Sort(files, (a, b) => string.Compare(a, b, ignoreCase: true));
 
                 for (int i = 0; i < files.Length; i++) {
                     string file = files[i];
@@ -133,6 +136,7 @@ namespace Olympus {
             public bool IsFile;
             public bool IsBlacklisted;
             public bool IsUpdaterBlacklisted;
+            public string GameBananaTitle;
 
             public string Name;
             public string Version;
@@ -140,7 +144,7 @@ namespace Olympus {
             public string[] Dependencies;
             public bool IsValid;
 
-            public void Parse(TextReader reader) {
+            public void Parse(TextReader reader, Dictionary<string, string> modIDsToNamesMap) {
                 try {
                     if (reader != null) {
                         List<EverestModuleMetadata> yaml = YamlHelper.Deserializer.Deserialize<List<EverestModuleMetadata>>(reader);
@@ -149,6 +153,7 @@ namespace Olympus {
                             Version = yaml[0].Version;
                             DLL = yaml[0].DLL;
                             Dependencies = yaml[0].Dependencies.Select(dep => dep.Name).ToArray();
+                            GameBananaTitle = modIDsToNamesMap.TryGetValue(Name, out string o) ? o : null;
 
                             IsValid = Name != null && Version != null;
                         }
@@ -159,7 +164,7 @@ namespace Olympus {
             }
         }
 
-        public class EverestModuleMetadata {
+        public struct EverestModuleMetadata {
             public string Name;
             public string Version;
             public string DLL;

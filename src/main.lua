@@ -203,14 +203,11 @@ function love.load(args)
         love.window.showMessageBox("Olympus.Sharp Startup Error", "Failed loading Olympus.Sharp: " .. tostring(sharpError), "error")
     else
         threader.routine(function()
-            for i = 1, 4 do
-                for j = 1, 10 do
-                    sharp.echo("warmup " .. tostring(i) .. " " .. tostring(j)):result()
-                end
-                threader.sleep(0.01)
-            end
+            sharp.getModIdToNameMap(fs.joinpath(fs.getStorageDir(), "cached-mod-ids-to-names.json"))
         end)
     end
+
+    print("Connection with Olympus.Sharp is " .. sharp.echo("OK!"):result())
 
     config = require("config")
     config.load()
@@ -226,7 +223,7 @@ function love.load(args)
     end
 
     logChannel = love.thread.getChannel("olympusLog")
-    logFile = io.open(fs.joinpath(fs.getStorageDir(), "log.txt"), "w+")
+    logFile = io.open(fs.joinpath(fs.getStorageDir(false), "log.txt"), "w+")
 
     love.version = {love.getVersion()}
     love.versionStr = table.concat(love.version, ".")
@@ -249,6 +246,7 @@ function love.load(args)
     uiu = require("ui.utils")
     megacanvas = require("ui.megacanvas")
     require("elements")
+    require("dropdown_with_submenu")
 
     local fonts = {
         "data/fonts/Poppins-Regular.ttf",

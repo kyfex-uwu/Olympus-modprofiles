@@ -117,6 +117,9 @@ function config.load()
     default(data, "parallax", 1)
 
     default(data, "mapeditor", "loenn")
+    if data.mapeditor == "ahorn" then
+        data.mapeditor = "both"
+    end
 
     default(data, "ahorn", {})
 
@@ -131,6 +134,7 @@ function config.load()
 
     default(data, "updateModsOnStartup", "none")
     default(data, "useOpenGL", "disabled")
+    default(data, "mirrorPreferences", "gb,jade,otobot,wegfan")
 
     default(data, "closeAfterOneClickInstall", "disabled")
 

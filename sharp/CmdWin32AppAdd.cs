@@ -1,16 +1,7 @@
-﻿using Microsoft.Win32;
-using Mono.Cecil;
-using Mono.Cecil.Cil;
-using MonoMod.Utils;
-using System;
-using System.Collections.Generic;
+﻿#if WIN32
+using Microsoft.Win32;
 using System.IO;
-using System.IO.Compression;
-using System.Linq;
-using System.Runtime.InteropServices;
-using System.Runtime.InteropServices.ComTypes;
-using System.Text;
-using System.Threading.Tasks;
+using System.Reflection;
 
 namespace Olympus {
     public class CmdWin32AppAdd : Cmd<string, string, string> {
@@ -20,17 +11,20 @@ namespace Olympus {
                 if (key == null)
                     return null;
 
+                DirectoryInfo dir = new DirectoryInfo(Path.GetDirectoryName(exepath));
+                string selfPath = Assembly.GetExecutingAssembly().Location;
+                selfPath = Path.Combine(Path.GetDirectoryName(selfPath), "Olympus.Sharp.exe");
+
                 key.SetValue("DisplayName", "Olympus");
                 key.SetValue("Publisher", "Everest Team");
                 key.SetValue("HelpLink", "https://everestapi.github.io/");
                 key.SetValue("DisplayIcon", $"{exepath},0");
                 key.SetValue("DisplayVersion", version);
-                DirectoryInfo dir = new DirectoryInfo(Path.GetDirectoryName(exepath));
                 key.SetValue("InstallLocation", dir);
                 key.SetValue("InstallDate", dir.CreationTime.ToString("yyyyMMdd"));
                 key.SetValue("EstimatedSize", (int) (GetDirectorySize(dir) / 1024));
-                key.SetValue("UninstallString", $"\"{Program.SelfPath}\" --uninstall");
-                key.SetValue("QuietUninstallString", $"\"{Program.SelfPath}\" --uninstall --quiet");
+                key.SetValue("UninstallString", $"\"{selfPath}\" --uninstall");
+                key.SetValue("QuietUninstallString", $"\"{selfPath}\" --uninstall --quiet");
                 key.SetValue("NoModify", 1);
                 key.SetValue("NoRepair", 1);
 
@@ -52,3 +46,4 @@ namespace Olympus {
 
     }
 }
+#endif

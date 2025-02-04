@@ -7,9 +7,10 @@ strategy:
       agentArch: 'windows'
       artifactPrefix: 'windows.'
       artifactSuffix: ''
-      netbuilder: 'core'
+      netBuildOS: 'win-x86'
       lualibs: 'prebuilt'
       loveURL: 'https://github.com/love2d/love/releases/download/11.5/love-11.5-win32.zip'
+      loveLuaURL: 'https://github.com/love2d/love/releases/download/11.3/love-11.3-win32.zip'
       loveZIP: 'love.zip'
       loveAppImage: ''
       loveBinaryDirectory: ''
@@ -21,12 +22,12 @@ strategy:
       agentArch: 'macOS'
       artifactPrefix: 'macos.'
       artifactSuffix: ''
-      netbuilder: 'mono'
-      monokickURL: 'https://github.com/flibitijibibo/MonoKickstart.git'
+      netBuildOS: 'osx-x64'
       lualibs: 'luarocks'
       luarocksPreArgs: '--lua-dir=/usr/local/opt/lua@5.1'
       luarocksArgs: 'LUA_LIBDIR="/usr/local/opt/lua@5.1/lib"'
       loveURL: 'https://github.com/love2d/love/releases/download/11.5/love-11.5-macos.zip'
+      loveLuaURL: ''
       loveZIP: 'love.zip'
       loveAppImage: ''
       loveBinaryDirectory: 'love.app/Contents/MacOS/'
@@ -38,20 +39,16 @@ strategy:
       agentArch: 'linux'
       artifactPrefix: 'linux.'
       artifactSuffix: ''
-      netbuilder: 'mono'
-      monokickURL: 'https://github.com/flibitijibibo/MonoKickstart.git'
+      netBuildOS: 'linux-x64'
       lualibs: 'luarocks'
       luarocksArgs: 'LUA_LIBDIR="/usr/local/opt/lua/lib"'
       loveURL: 'https://github.com/love2d/love/releases/download/11.5/love-11.5-x86_64.AppImage'
+      loveLuaURL: ''
       loveZIP: ''
       loveAppImage: 'love-raw/love'
       loveBinaryDirectory: ''
       loveResourcesDirectory: ''
       launcher: ''
-
-variables:
-  netBuildPlatform: 'Any CPU'
-  netBuildConfiguration: 'Release'
 
 name: '$(Date:yy.MM.dd)$(Rev:.rr)'
 
@@ -105,7 +102,7 @@ steps:
   displayName: 'Build: luarocks: install subprocess'
   inputs:
     script: |
-      luarocks $LUAROCKSPREARGS install --tree=luarocks https://raw.githubusercontent.com/0x0ade/lua-subprocess/master/subprocess-scm-1.rockspec $LUAROCKSARGS
+      luarocks $LUAROCKSPREARGS install --tree=luarocks https://raw.githubusercontent.com/maddie480/lua-subprocess/master/subprocess-scm-1.rockspec $LUAROCKSARGS
 
 # Install nfd.
 - task: CmdLine@2
@@ -125,31 +122,23 @@ steps:
 
 
 # Build sharp.
-# Use dotnet to restore NuGet packages even when building with mono.
 - task: DotNetCoreCLI@2
   displayName: 'Build: dotnet: restore sharp'
   inputs:
     command: 'restore'
     projects: 'sharp/*.csproj'
 
-# Build using core.
 - task: DotNetCoreCLI@2
-  condition: and(succeeded(), eq(variables.netbuilder, 'core'))
   displayName: 'Build: dotnet: build sharp'
   inputs:
-    command: 'build'
+    command: 'publish'
     projects: 'sharp/*.csproj'
-    arguments: '--configuration $(netBuildConfiguration) "/p:Configuration=$(netBuildConfiguration)"'
-
-# Build using mono.
-- task: CmdLine@2
-  condition: and(succeeded(), eq(variables.netbuilder, 'mono'))
-  displayName: 'Build: mono: build sharp'
-  inputs:
-    script: 'msbuild sharp/*.sln "/p:Configuration=$(netBuildConfiguration)" "/p:Platform=$(netBuildPlatform)"'
+    publishWebProjects: false
+    zipAfterPublish: false
+    arguments: '--runtime $(netBuildOS) --self-contained'
 
 
-# Build launcher-winforms.
+  # Build launcher-winforms.
 - task: UseDotNet@2
   condition: and(succeeded(), eq(variables.agentArch, 'windows'))
   displayName: 'Build: downgrade .NET to build launcher-winforms'
@@ -169,7 +158,8 @@ steps:
   inputs:
     command: 'build'
     projects: 'launcher-winforms/*.csproj'
-    arguments: '--configuration $(netBuildConfiguration) "/p:Configuration=$(netBuildConfiguration)"'
+    arguments: '--configuration Release'
+
 
 # Create a dummy dir for platforms which don't use prebuilt LÖVE.
 - task: CmdLine@2
@@ -186,7 +176,7 @@ steps:
   condition: and(succeeded(), ne(variables.loveURL, ''))
   displayName: 'Dist: Grab cached LÖVE'
   inputs:
-    key: 'love-unpacked-11-4 | "$(Agent.OS)"'
+    key: 'love-unpacked | "$(Agent.OS)"'
     path: love-raw
     cacheHitVar: loveCached
 - task: PowerShell@2
@@ -206,6 +196,17 @@ steps:
     targetType: 'inline'
     script: |
       Expand-Archive -Path $env:LOVEZIP -DestinationPath love-raw
+# If we need to pull lua51.dll from another LÖVE package, download, unzip and grab lua51.dll.
+- task: PowerShell@2
+  condition: and(succeeded(), ne(variables.loveLuaURL, ''), ne(variables.loveCached, 'true'))
+  displayName: 'Dist: Replace lua51.dll'
+  continueOnError: true
+  inputs:
+    targetType: 'inline'
+    script: |
+      Invoke-WebRequest -Uri $env:LOVELUAURL -OutFile lovelua.zip
+      Expand-Archive -Path lovelua.zip -DestinationPath lovelua
+      Copy-Item -Path lovelua/love-11.3-win32/lua51.dll -Destination love-raw/love-11.5-win32/lua51.dll -Force
 # Copy cached unpacked LÖVE, fix it up if needed
 - task: PowerShell@2
   condition: and(succeeded(), ne(variables.loveURL, ''))
@@ -300,57 +301,13 @@ steps:
   displayName: 'Dist: Copy sharp'
   continueOnError: true
   inputs:
-    sourceFolder: '$(Build.SourcesDirectory)/sharp/bin'
-    contents: '**/!(xunit.*|System.*|Microsoft.*|*.Tests.dll|*.pdb)'
+    sourceFolder: '$(Build.SourcesDirectory)/sharp/bin/Release/net8.0/$(netBuildOS)/publish'
+    contents: '**/*'
     targetFolder: 'love/$(loveBinaryDirectory)/sharp'
     cleanTargetFolder: false
     overWrite: true
     flattenFolders: true
 
-# If needed, grab MonoKickstart and shove the prebuilts into the sharp dir.
-# Clone.
-- task: CmdLine@2
-  condition: and(succeeded(), ne(variables.monokickURL, ''))
-  displayName: 'Dist: Clone MonoKickstart'
-  continueOnError: true
-  inputs:
-    script: |
-      git clone $MONOKICKURL
-# Fix Kick filename and bash script.
-- task: PowerShell@2
-  condition: and(succeeded(), ne(variables.monokickURL, ''))
-  displayName: 'Dist: Fix MonoKickstart'
-  continueOnError: true
-  inputs:
-    targetType: 'inline'
-    script: |
-      Move-Item -Path MonoKickstart/precompiled/kick.bin.osx -Destination MonoKickstart/precompiled/Olympus.Sharp.bin.osx
-      Move-Item -Path MonoKickstart/precompiled/kick.bin.x86_64 -Destination MonoKickstart/precompiled/Olympus.Sharp.bin.x86_64
-      Remove-Item -Path MonoKickstart/precompiled/kick.bin.x86_64.debug -Force
-# Copy the precompiled folder into the sharp folder.
-- task: CopyFiles@2
-  condition: and(succeeded(), ne(variables.monokickURL, ''))
-  displayName: 'Dist: Copy MonoKickstart'
-  continueOnError: true
-  inputs:
-    sourceFolder: '$(Build.SourcesDirectory)/MonoKickstart/precompiled'
-    contents: '**/*'
-    targetFolder: 'love/$(loveBinaryDirectory)/sharp'
-    cleanTargetFolder: false
-    overWrite: true
-    flattenFolders: false
-# Copy special additional mono dependencies.
-# Those usually come from Ubuntu Mono packages with a version close to the MonoKickstart version.
-- task: CopyFiles@2
-  displayName: 'Dist: Copy prebuilt mono libs'
-  continueOnError: true
-  inputs:
-    sourceFolder: '$(Build.SourcesDirectory)/lib-mono'
-    contents: '**/*'
-    targetFolder: 'love/$(loveBinaryDirectory)/sharp'
-    cleanTargetFolder: false
-    overWrite: true
-    flattenFolders: true
 
 # Per-platform bundling steps.
 # Windows
@@ -369,8 +326,9 @@ steps:
       New-Item -Path $env:BUILD_ARTIFACTSTAGINGDIRECTORY/main -ItemType Directory
       Compress-Archive -Path love/* -DestinationPath $env:BUILD_ARTIFACTSTAGINGDIRECTORY/main/dist.zip -Force
       New-Item -Path $env:BUILD_ARTIFACTSTAGINGDIRECTORY/update -ItemType Directory
+      New-Item -Path $env:BUILD_ARTIFACTSTAGINGDIRECTORY/platform-update -ItemType Directory
       Copy-Item -Path olympus.love -Destination $env:BUILD_ARTIFACTSTAGINGDIRECTORY/update/olympus.love
-      Compress-Archive -Path love/sharp/* -DestinationPath $env:BUILD_ARTIFACTSTAGINGDIRECTORY/update/sharp.zip -Force
+      Compress-Archive -Path love/sharp/* -DestinationPath $env:BUILD_ARTIFACTSTAGINGDIRECTORY/platform-update/sharp.zip -Force
       New-Item -Path $env:BUILD_ARTIFACTSTAGINGDIRECTORY/launcher-winforms -ItemType Directory
       Copy-Item -Path launcher-winforms/bin/Release/net452/Olympus.exe -Destination $env:BUILD_ARTIFACTSTAGINGDIRECTORY/launcher-winforms/Olympus.exe
 
@@ -393,11 +351,6 @@ steps:
       plutil -replace CFBundleShortVersionString -string "$BUILD_BUILDNUMBER" $PLIST
       plutil -insert LSArchitecturePriority -array $PLIST
       plutil -insert LSArchitecturePriority -string x86_64 -append $PLIST
-      curl https://www.libsdl.org/release/SDL2-2.0.14.dmg -o sdl2.dmg
-      hdiutil attach -mountpoint sdl2mount sdl2.dmg
-      rm -rf love/love.app/Contents/Frameworks/SDL2.framework
-      cp -rf sdl2mount/SDL2.framework love/love.app/Contents/Frameworks/SDL2.framework
-      hdiutil detach sdl2mount
       git clone https://luajit.org/git/luajit-2.0.git
       pushd luajit-2.0
       git checkout ec6edc5c39c25e4eb3fca51b753f9995e97215da
@@ -409,8 +362,12 @@ steps:
       cp find-love.sh love/$LOVEBINARYDIRECTORY/find-love
       chmod a+rx love/$LOVEBINARYDIRECTORY/find-love
       chmod a+rx love/$LOVEBINARYDIRECTORY/love
-      chmod a+rx love/$LOVEBINARYDIRECTORY/sharp/Olympus.Sharp.bin*
+      chmod a+rx love/$LOVEBINARYDIRECTORY/sharp/Olympus.Sharp
       codesign --remove-signature love/$LOVEBINARYDIRECTORY/love
+      mkdir $BUILD_ARTIFACTSTAGINGDIRECTORY/platform-update
+      pushd love/$LOVEBINARYDIRECTORY/sharp
+      zip -r $BUILD_ARTIFACTSTAGINGDIRECTORY/platform-update/sharp.zip *
+      popd
       mv love/love.app love/Olympus.app
       pushd love
       mkdir $BUILD_ARTIFACTSTAGINGDIRECTORY/main
@@ -431,7 +388,7 @@ steps:
       chmod a+rx love/$LOVEBINARYDIRECTORY/find-love
       chmod a+rx love/$LOVEBINARYDIRECTORY/love
       chmod a+rx love/$LOVEBINARYDIRECTORY/install.sh
-      chmod a+rx love/$LOVEBINARYDIRECTORY/sharp/Olympus.Sharp.bin*
+      chmod a+rx love/$LOVEBINARYDIRECTORY/sharp/Olympus.Sharp
       sed -i -e "s/BUILD_VERSION/$(Build.BuildNumber)/g" love/$LOVEBINARYDIRECTORY/io.github.everestapi.Olympus.metainfo.xml
       sed -i -e "s/BUILD_DATE/$(date '+%Y-%m-%d')/g" love/$LOVEBINARYDIRECTORY/io.github.everestapi.Olympus.metainfo.xml
       cp src/data/icon.png love/$LOVEBINARYDIRECTORY/olympus.png
@@ -443,6 +400,10 @@ steps:
       pushd love
       mkdir $BUILD_ARTIFACTSTAGINGDIRECTORY/main
       zip --symlinks -r $BUILD_ARTIFACTSTAGINGDIRECTORY/main/dist.zip *
+      popd
+      mkdir $BUILD_ARTIFACTSTAGINGDIRECTORY/platform-update
+      pushd love/sharp
+      zip -r $BUILD_ARTIFACTSTAGINGDIRECTORY/platform-update/sharp.zip *
       popd
 
 # Publish.
@@ -456,11 +417,18 @@ steps:
     publishLocation: 'Container'
 - task: PublishBuildArtifacts@1
   condition: and(succeeded(), eq(variables.agentArch, 'windows'))
-  displayName: 'Dist: Publish update'
+  displayName: 'Dist: Publish update (common)'
   continueOnError: true
   inputs:
     pathtoPublish: '$(Build.ArtifactStagingDirectory)/update'
     artifactName: 'update'
+    publishLocation: 'Container'
+- task: PublishBuildArtifacts@1
+  displayName: 'Dist: Publish update (platform-specific)'
+  continueOnError: true
+  inputs:
+    pathtoPublish: '$(Build.ArtifactStagingDirectory)/platform-update'
+    artifactName: '$(artifactPrefix)update$(artifactSuffix)'
     publishLocation: 'Container'
 - task: PublishBuildArtifacts@1
   condition: and(succeeded(), eq(variables.agentArch, 'windows'))

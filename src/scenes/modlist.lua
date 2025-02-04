@@ -64,6 +64,29 @@ root:findChild("scrollbox").handleY:hook({
 
 scene.root = root
 
+
+-- finds a mod from modlist by its path
+local function findModByPath(path)
+    for i, mod in ipairs(scene.modlist) do
+        if mod.info.Path == path then
+            return mod
+        end
+    end
+    return nil
+end
+
+-- creates alert with error message
+local function displayErrorMessage(text)
+    alert({
+        body = string.format(text),
+        buttons = {
+            {
+                "Close",
+            },
+        }
+    })
+end
+
 -- writes the blacklist to disk, making the enabled/disabled mods actually take effect
 local function writeBlacklist()
     local contents = "# This is the blacklist. Lines starting with # are ignored.\n# File generated through the \"Manage Installed Mods\" screen in Olympus\n\n"
@@ -95,7 +118,8 @@ local function refreshVisibleMods()
             -- search terms
             (scene.search == ""
                 or string.find(string.lower(fs.filename(mod.info.Path)), scene.search, 1, true)
-                or (mod.info.Name and string.find(string.lower(mod.info.Name), scene.search, 1, true)))
+                or (mod.info.Name and string.find(string.lower(mod.info.Name), scene.search, 1, true))
+                or (mod.info.GameBananaTitle and string.find(string.lower(mod.info.GameBananaTitle), scene.search, 1, true)))
 
         if mod.visible and not newVisible then
             -- remove from list
@@ -133,7 +157,36 @@ end
 
 -- gives the text for a given mod
 local function getLabelTextFor(info)
-    return { info.IsBlacklisted and { 1, 1, 1, 0.5 } or { 1, 1, 1, 1 }, fs.filename(info.Path) .. "\n" .. (info.Name or "?"), { 1, 1, 1, 0.5 }, " ∙ " .. (info.Version or "?.?.?.?") }
+    local grey = { 1, 1, 1, 0.5 }
+    local white = { 1, 1, 1, 1 }
+
+    if info.Name then
+        if info.GameBananaTitle then
+            -- Maddie's Helping Hand
+            -- MaxHelpingHand 1.4.5 ∙ Filename.zip
+            return {
+                info.IsBlacklisted and grey or white,
+                info.GameBananaTitle .. "\n",
+                grey,
+                info.Name .. " " .. (info.Version or "?.?.?.?") .. " ∙ " .. fs.filename(info.Path)
+            }
+        else
+            -- MaxHelpingHand
+            -- 1.4.5 ∙ Filename.zip
+            return {
+                info.IsBlacklisted and grey or white,
+                info.Name .. "\n",
+                grey,
+                (info.Version or "?.?.?.?") .. " ∙ " .. fs.filename(info.Path)
+            }
+        end
+    else
+        -- Filename.zip
+        return {
+            info.IsBlacklisted and grey or white,
+            fs.filename(info.Path)
+        }
+    end
 end
 
 -- enable a mod on the UI (writeBlacklist needs to be called afterwards to write the change to disk)
@@ -174,6 +227,33 @@ local function contains(table, element)
     return false
 end
 
+-- builds the confirmation message body for toggling mods, including a potentially-long list of mods in a scrollbox
+local function getConfirmationMessageBodyForModToggling(dependenciesToToggle, message)
+    local modList = ''
+    for _, mod in ipairs(dependenciesToToggle) do
+        modList = modList
+            .. (modList == '' and '' or '\n')
+            .. '- ' ..
+            (
+                (mod.info.GameBananaTitle and mod.info.GameBananaTitle ~= mod.info.Name)
+                and (mod.info.GameBananaTitle .. ' ∙ ')
+                or ''
+            )
+            .. mod.info.Name
+    end
+
+    return uie.column({
+        uie.label(message),
+        uie.scrollbox(uie.label(modList))
+            :with(uiu.hook({
+                calcSize = function (orig, self, width, height)
+                    uie.group.calcSize(self)
+                end
+            }))
+            :with({ maxHeight = 300 })
+    })
+end
+
 -- recursively lists all dependencies of the given mod that should be enabled for this mod to work
 local function findDependenciesToEnableRecursively(info, dependenciesFoundSoFar)
     if not info.Dependencies then
@@ -211,12 +291,12 @@ local function checkDisabledDependenciesOfEnabledMod(info, row)
 
     if next(dependenciesToToggle) ~= nil then
         alert({
-            body = string.format(
+            body = getConfirmationMessageBodyForModToggling(dependenciesToToggle, string.format(
                 "This mod depends on %s other disabled %s.\nDo you want to enable %s as well?",
                 #dependenciesToToggle,
                 #dependenciesToToggle == 1 and "mod" or "mods",
                 #dependenciesToToggle == 1 and "it" or "them"
-            ),
+            )),
             buttons = {
                 {
                     "Yes",
@@ -270,12 +350,12 @@ local function checkEnabledModsDependingOnDisabledMod(info, row)
 
     if next(dependenciesToToggle) ~= nil then
         alert({
-            body = string.format(
+            body = getConfirmationMessageBodyForModToggling(dependenciesToToggle, string.format(
                 "%s other %s on this mod.\nDo you want to disable %s as well?",
                 #dependenciesToToggle,
                 #dependenciesToToggle == 1 and "mod depends" or "mods depend",
                 #dependenciesToToggle == 1 and "it" or "them"
-            ),
+            )),
             buttons = {
                 {
                     "Yes",
@@ -343,6 +423,230 @@ local function verticalCenter(el)
             orig(self)
         end
     })
+end
+
+-- loops thorugh modlist and calls disableMod() on every
+local function disableAllMods()
+    for i, mod in ipairs(scene.modlist) do
+        disableMod(mod.row, mod.info)
+    end
+end
+
+-- disables all mods then enables mods from preset
+local function applyPreset(name, disableAll)
+    if disableAll then
+        disableAllMods()
+    end
+    name = name:gsub("%p", "%%%1") -- escape special characters
+    local root = config.installs[config.install].path
+    local contents = fs.read(fs.joinpath(root, "Mods", "modpresets.txt"))
+    if contents == nil then
+        return
+    end
+    local presetMods = contents:match("%*%*" .. name .. "\n([^*]*)") -- gets a string with all preset .zip mod file names
+    local missingMods = ""
+
+    for filename in presetMods:gmatch("([^\n]*)\n") do -- splits the string after every newline into mod filenames
+        local path = fs.joinpath(root, "Mods", filename)
+        local mod = findModByPath(path)
+        if mod ~= nil then
+            enableMod(mod.row, mod.info)
+        else
+            if missingMods ~= "" then
+                missingMods = missingMods .. ", "
+            end
+            missingMods = missingMods .. filename
+        end
+    end
+    if missingMods ~= "" then
+        displayErrorMessage("Some mods couldn't be loaded, make sure they are installed: \n" .. missingMods)
+    end
+    writeBlacklist()
+end
+
+-- deletes preset from modpresets.txt
+local function deletePreset(name)
+    if name == nil then
+        displayErrorMessage("Something went wrong, deleted preset's name is nil!")
+        return
+    end
+    if #name == 0 then
+        displayErrorMessage("Something went wrong, deleted preset's name is empty!")
+        return
+    end
+
+    local root = config.installs[config.install].path
+    local contents = fs.read(fs.joinpath(root, "Mods", "modpresets.txt"))
+    if contents ~= nil then
+        name = name:gsub("%p", "%%%1") -- escape special characters
+        contents = contents:gsub("%*%*(" .. name .. "\n[^*]*)","", 1)
+        fs.write(fs.joinpath(root, "Mods", "modpresets.txt"), contents)
+    end
+end
+
+-- reads modpresets.txt and returns a list of all preset names
+local function readPresetsList()
+    local root = config.installs[config.install].path
+    local contents = fs.read(fs.joinpath(root, "Mods", "modpresets.txt"))
+
+    if contents ~= nil then
+        local names = {}
+        for substring in contents:gmatch("%*%*(.-)%\n") do
+            names[#names+1] = substring
+        end
+        return names
+    else -- create modpresets.txt if it doesnt exist
+        fs.write(fs.joinpath(root, "Mods", "modpresets.txt"), "# This is the file used to save mod presets.\n# File generated through the \"Manage Installed Mods\" screen in Olympus\n\n")
+        return readPresetsList()
+    end
+end
+
+-- writes a new preset to a modpresets.txt, returns true if preset was created successfully and false if not
+local function addPreset(name)
+    if name == nil then
+        displayErrorMessage("Something went wrong, name is nil!")
+        return false
+    end
+    if #name == 0 then
+        displayErrorMessage("Preset name can't be empty!")
+        return false
+    end
+
+    --check if name is already taken
+    local names = readPresetsList()
+    if names ~= nil then
+        for i, n in ipairs(names) do
+            if n == name then
+                alert({
+                    body = "This preset already exists! Do you wish to override it?",
+                    buttons = {
+                        {
+                            "Yes",
+                            function (container)
+                                deletePreset(name)
+                                addPreset(name)
+                                container:close("OK")
+                            end
+                        },
+                        {
+                            "No",
+                        },
+                    }
+               })
+               return false
+            end
+        end
+    end
+    local root = config.installs[config.install].path
+    local contents = fs.read(fs.joinpath(root, "Mods", "modpresets.txt"))
+    contents = contents .. "**" .. name .. "\n"
+
+    for i, mod in ipairs(scene.modlist) do
+        if mod.row:findChild("toggleCheckbox"):getValue() then
+            contents = contents .. fs.filename(mod.info.Path) .. "\n"
+        end
+    end
+
+    fs.write(fs.joinpath(root, "Mods", "modpresets.txt"), contents)
+    return true
+end
+
+
+
+-- builds the Mod Presets screen and returns it, use scene.displayPresetsUI() to show it
+local function buildPresetsUI()
+    local presets = readPresetsList()
+    local presetsRow = {}
+    local preset = ""
+
+    local presetField = uie.field("", function(self, value, prev)
+        preset = value
+    end):with({
+        width = 200,
+        height = 24,
+        placeholder = "New preset name",
+        enabled = true
+    }):as("presetField")
+
+    for i = 1, #presets do
+        if presets ~= nil then
+            local presetRow = uie.paneled.row({
+                uie.label(presets[i]):with(verticalCenter),
+                uie.row({
+                    uie.button("Add", function(self)
+                        applyPreset(presets[i], false)
+                    end),
+                    uie.button("Replace", function(self)
+                        applyPreset(presets[i], true)
+                    end),
+                    uie.button("Delete", function(self)
+                        alert({
+                            body = [[
+    Are you sure that you want to delete ]] .. presets[i] .. [[?]],
+                            buttons = {
+                                {
+                                    "Delete",
+                                    function(container)
+                                        deletePreset(presets[i])
+                                        container:close("OK")
+                                        self:getParent("modPresets"):close("OK")
+                                        scene.displayPresetsUI()
+                                    end
+                                },
+                                { "Keep" }
+                            }
+                        })
+                    end)
+                }):with(uiu.rightbound)
+        }):with(uiu.fillWidth)
+            presetsRow[#presetsRow + 1] = presetRow
+
+        end
+    end
+
+    return uie.column({
+        uie.paneled.row({
+            uie.button("Edit modpresets.txt", function()
+                local root = config.installs[config.install].path
+                utils.openFile(fs.joinpath(root, "Mods", "modpresets.txt"))
+            end),
+            uie.row({
+                presetField,
+                uie.button("Add preset", function(self)
+                    local success = addPreset(preset)
+                    if success then
+                        self:getParent("modPresets"):close("OK")
+                        scene.displayPresetsUI()
+                    end
+                end)
+            }):with(uiu.rightbound)
+        }):with(uiu.fillWidth),
+        uie.scrollbox(
+            uie.column(presetsRow):with(uiu.fillWidth)
+        ):with(uiu.fillWidth):with(uiu.fillHeight(true)),
+
+    }):with({
+        clip = false,
+        cacheable = false
+    }):with(uiu.fillWidth):with(uiu.fillHeight(true))
+end
+
+-- shows the Mod Presets screen
+function scene.displayPresetsUI()
+    alert({
+        title = "Mod presets",
+        body = buildPresetsUI(),
+        big = true,
+        buttons = {
+            {
+                "Close"
+            }
+        },
+        init = function (container)
+            container.popup = false
+        end
+
+    }):as("modPresets")
 end
 
 function scene.item(info)
@@ -440,7 +744,7 @@ function scene.reload()
                     uie.label("This menu allows you to enable, disable or delete the mods you currently have installed."),
                 }),
                 uie.buttonGreen("Update All", function()
-                    modupdater.updateAllMods(root, nil, "all", scene.reload)
+                    modupdater.updateAllMods(root, nil, "all", scene.reload, true)
                 end):with({ enabled = false }):with(uiu.rightbound):with(uiu.bottombound):as("updateAllButton"),
             }):with(uiu.fillWidth),
             uie.row({
@@ -449,6 +753,9 @@ function scene.reload()
                 end),
                 uie.button("Edit blacklist.txt", function()
                     utils.openFile(fs.joinpath(root, "Mods", "blacklist.txt"))
+                end),
+                uie.button("Mod presets", function()
+                    scene.displayPresetsUI()
                 end),
                 uie.checkbox("Only show enabled mods", false, function(checkbox, newState)
                     scene.onlyShowEnabledMods = newState
@@ -463,9 +770,7 @@ function scene.reload()
                         writeBlacklist()
                     end):with({ enabled = false }):as("enableAllButton"),
                     uie.button("Disable All", function()
-                        for i, mod in ipairs(scene.modlist) do
-                            disableMod(mod.row, mod.info)
-                        end
+                        disableAllMods()
                         writeBlacklist()
                     end):with({ enabled = false }):as("disableAllButton"),
                 }):with(uiu.rightbound)
@@ -476,7 +781,7 @@ function scene.reload()
             scene.search = string.lower(value)
             refreshVisibleMods()
         end):with({
-            placeholder = "Search by file name or everest.yaml ID",
+            placeholder = "Search by file name, mod title or everest.yaml ID",
             enabled = false
         }):with(uiu.fillWidth)
         list:addChild(searchField)
@@ -519,7 +824,6 @@ function scene.reload()
         scene.root:findChild("updateAllButton"):setEnabled(true)
         scene.root:findChild("onlyShowEnabledModsCheckbox"):setEnabled(true)
         searchField:setEnabled(true)
-
         for i, mod in ipairs(scene.modlist) do
             mod.row:findChild("toggleCheckbox"):setEnabled(true)
         end

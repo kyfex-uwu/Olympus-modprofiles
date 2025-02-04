@@ -1,16 +1,5 @@
-﻿using Microsoft.Win32;
-using Mono.Cecil;
-using Mono.Cecil.Cil;
-using MonoMod.Utils;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.IO.Compression;
-using System.Linq;
-using System.Runtime.InteropServices;
-using System.Runtime.InteropServices.ComTypes;
-using System.Text;
-using System.Threading.Tasks;
+﻿#if WIN32
+using Microsoft.Win32;
 
 namespace Olympus {
     public static class Win32RegHelper {
@@ -60,3 +49,4 @@ namespace Olympus {
 
     }
 }
+#endif

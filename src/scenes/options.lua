@@ -74,12 +74,6 @@ local updatepaths = {
     { text = "Development", data = "stable,main" }
 }
 
-local mapeditors = {
-    { text = "Lönn (Default)", data = "loenn" },
-    { text = "Ahorn", data = "ahorn" },
-    { text = "Both", data = "both" }
-}
-
 local updateModsOnStartupOptions = {
     { text = "All Mods", data = "all" },
     { text = "Enabled Mods Only", data = "enabled" },
@@ -94,6 +88,14 @@ local useOpenGLOptions = {
 local closeAfterOneClickInstallOptions = {
     { text = "Enabled", data = "enabled" },
     { text = "Disabled (Default)", data = "disabled" }
+}
+
+-- Keep in sync with https://github.com/EverestAPI/Everest/blob/dev/Celeste.Mod.mm/Mod/Core/CoreModuleSettings.cs :: CreateMirrorPreferencesEntry
+local mirrorPreferences = {
+    { text = "Disabled (Default)", data = "gb,jade,otobot,wegfan" },
+    { text = "Germany (0x0a.de)", data = "jade,otobot,wegfan,gb" },
+    { text = "China (weg.fan)", data = "wegfan,otobot,jade,gb" },
+    { text = "N. America (celestemods.com)", data = "otobot,jade,wegfan,gb" }
 }
 
 local extradatas = {
@@ -208,7 +210,7 @@ scene.bgPicker = uie.scrollbox(
     cacheable = false
 }):with(uiu.fillWidth):with(uiu.fillHeight(true))
 
-local optioncount = 5
+local optioncount = 4
 local root = uie.column({
     uie.scrollbox(
         uie.column({
@@ -217,7 +219,6 @@ local root = uie.column({
                 uie.label("Options", ui.fontBig),
 
                 uie.row({
-
                     uie.column({
                         uie.label("Theme"),
                         uie.dropdown(themes):with({
@@ -292,6 +293,9 @@ local root = uie.column({
                         }):with(uiu.fillWidth)
                     }):with(uiu.fillWidth(8 + 1 / optioncount)):with(uiu.at(3 / optioncount, 0)),
 
+                }):with(uiu.fillWidth),
+
+                uie.row({
                     uie.column({
                         uie.label("Parallax"),
                         uie.dropdown({
@@ -305,15 +309,8 @@ local root = uie.column({
                         end):with({
                             selectedIndex = config.parallax <= 0 and 4 or config.parallax <= 0.2 and 3 or config.parallax <= 0.5 and 2 or 1
                         }):with(uiu.fillWidth)
-                    }):with(uiu.fillWidth(8 + 1 / optioncount)):with(uiu.at(4 / optioncount, 0)),
+                    }):with(uiu.fillWidth(8 + 1 / optioncount)):with(uiu.at(0 / optioncount, 0)),
 
-
-
-                }):with(uiu.fillWidth),
-
-                uie.group({}),
-
-                uie.row({
                     uie.column({
                         uie.label("Vertical Sync"),
                         uie.dropdown({
@@ -326,7 +323,7 @@ local root = uie.column({
                         end):with({
                             selectedIndex = config.vsync and 1 or 2
                         }):with(uiu.fillWidth)
-                    }):with(uiu.fillWidth(8 + 1 / optioncount)):with(uiu.at(0 / optioncount, 0)),
+                    }):with(uiu.fillWidth(8 + 1 / optioncount)):with(uiu.at(1 / optioncount, 0)),
 
                     uie.column({
                         uie.label("Updates"),
@@ -337,17 +334,6 @@ local root = uie.column({
                         end):with({
                             placeholder = "???",
                             selectedData = config.updates
-                        }):with(uiu.fillWidth)
-                    }):with(uiu.fillWidth(8 + 1 / optioncount)):with(uiu.at(1 / optioncount, 0)),
-
-                    uie.column({
-                        uie.label("Map Editor"),
-                        uie.dropdown(mapeditors, function(self, value)
-                            config.mapeditor = value
-                            config.save()
-                        end):with({
-                            placeholder = "???",
-                            selectedData = config.mapeditor
                         }):with(uiu.fillWidth)
                     }):with(uiu.fillWidth(8 + 1 / optioncount)):with(uiu.at(2 / optioncount, 0)),
 
@@ -362,6 +348,9 @@ local root = uie.column({
                         }):with(uiu.fillWidth)
                     }):with(uiu.fillWidth(8 + 1 / optioncount)):with(uiu.at(3 / optioncount, 0)),
 
+                }):with(uiu.fillWidth),
+
+                uie.row({
                     uie.column({
                         uie.label("Use OpenGL"),
                         uie.dropdown(useOpenGLOptions, function(self, value)
@@ -371,15 +360,8 @@ local root = uie.column({
                             placeholder = "???",
                             selectedData = config.useOpenGL
                         }):with(uiu.fillWidth)
-                    }):with(uiu.fillWidth(8 + 1 / optioncount)):with(uiu.at(4 / optioncount, 0)),
+                    }):with(uiu.fillWidth(8 + 1 / optioncount)):with(uiu.at(0 / optioncount, 0)),
 
-
-                }):with(uiu.fillWidth),
-
-                uie.group({}),
-
-
-                uie.row({
                     uie.column({
                         uie.label("Close after One-Click Install"),
                         uie.dropdown(closeAfterOneClickInstallOptions, function(self, value)
@@ -389,7 +371,18 @@ local root = uie.column({
                             placeholder = "???",
                             selectedData = config.closeAfterOneClickInstall
                         }):with(uiu.fillWidth)
-                    }):with(uiu.fillWidth(8 + 1 / optioncount)):with(uiu.at(0 / optioncount, 0)),
+                    }):with(uiu.fillWidth(8 + 1 / optioncount)):with(uiu.at(1 / optioncount, 0)),
+
+                    uie.column({
+                        uie.label("Use Mirror by Default"),
+                        uie.dropdown(mirrorPreferences, function(self, value)
+                            config.mirrorPreferences = value
+                            config.save()
+                        end):with({
+                            placeholder = "???",
+                            selectedData = config.mirrorPreferences
+                        }):with(uiu.fillWidth)
+                    }):with(uiu.fillWidth(8 + 1 / optioncount)):with(uiu.at(2 / optioncount, 0)),
 
                 }):with(uiu.fillWidth),
 

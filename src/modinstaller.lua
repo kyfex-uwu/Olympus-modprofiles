@@ -27,13 +27,6 @@ function modinstaller.register()
             print("updating installed application listing")
             sharp.win32AppAdd(exepath, utils.trim(utils.load("version.txt") or "?"))
 
-            -- While we're here, might as well create some helpful .lnks
-            -- INTRODUCED AFTER BUILD 1531
-            if config.lastrun < 0 or config.lastrun <= 1531 then
-                print("creating shortcuts", exepath)
-                sharp.win32CreateShortcuts(exepath)
-            end
-
             return true
         end
 
@@ -41,7 +34,7 @@ function modinstaller.register()
         return false
 
     elseif userOS == "Linux" then
-        if fs.isFile("/.flatpak-info") then
+        if fs.isFile("/.flatpak-info") or os.getenv("OLYMPUS_SKIP_SCHEME_HANDLER_CHECK") == "1" then
             return false
         end
 
@@ -84,7 +77,7 @@ function modinstaller.install(modurl, cb, autoclose)
     local installer = scener.push("installer")
     installer.update(string.format("Preparing installation of %s", modname), false, "")
 
-    installer.sharpTask("installMod", install, modurl):calls(function(task, last)
+    installer.sharpTask("installMod", install, modurl, config.mirrorPreferences):calls(function(task, last)
         if not last then
             return
         end
